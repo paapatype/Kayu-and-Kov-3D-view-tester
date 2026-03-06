@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Louver - 3D Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #2a2a2a; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #canvas-container { width: 100vw; height: 100vh; position: relative; }
+  canvas { display: block; }
+
+  /* Control Panel */
+  #panel {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(30,30,30,0.92); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+    padding: 16px; width: 260px; color: #ccc; font-size: 12px;
+    z-index: 100; user-select: none;
+  }
+  #panel h3 { color: #fff; font-size: 13px; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.3px; }
+  .ctrl-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .ctrl-row label { flex: 1; }
+  .ctrl-row input[type="range"] { width: 100px; accent-color: #6a9ff5; }
+  .ctrl-row input[type="checkbox"] { accent-color: #6a9ff5; }
+  .ctrl-row .val { width: 36px; text-align: right; color: #888; font-size: 11px; }
+  .section { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; margin-top: 10px; }
+  .section-title { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .info-row { color: #666; font-size: 11px; margin-bottom: 4px; }
+  .info-row span { color: #999; float: right; }
+  button.ctrl-btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: #aaa; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    font-size: 11px; transition: all 0.15s;
+  }
+  button.ctrl-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+
+  /* Loading */
+  #loader {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: #2a2a2a; z-index: 200; color: #888; font-size: 14px;
+  }
+  #loader.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="loader">Loading model...</div>
+<div id="canvas-container"></div>
+
+<div id="panel">
+  <h3>Louver Viewer</h3>
+
+  <div class="btn-row">
+    <button class="ctrl-btn" id="btn-reset">Reset View</button>
+    <button class="ctrl-btn" id="btn-fullscreen">Fullscreen</button>
+  </div>
+
+  <div class="ctrl-row">
+    <label>Wireframe</label>
+    <input type="checkbox" id="chk-wireframe">
+  </div>
+  <div class="ctrl-row">
+    <label>Auto-Rotate</label>
+    <input type="checkbox" id="chk-rotate">
+  </div>
+  <div class="ctrl-row">
+    <label>Flat Shading</label>
+    <input type="checkbox" id="chk-flatshade">
+  </div>
+
+  <div class="section">
+    <div class="section-title">Lighting</div>
+    <div class="ctrl-row">
+      <label>Exposure</label>
+      <input type="range" id="rng-exposure" min="0" max="3" step="0.05" value="1">
+      <div class="val" id="val-exposure">1.00</div>
+    </div>
+    <div class="ctrl-row">
+      <label>Env Intensity</label>
+      <input type="range" id="rng-envintensity" min="0" max="3" step="0.05" value="0.4">
+      <div class="val" id="val-envintensity">0.40</div>
+    </div>
+    <div class="ctrl-row">
+      <label>Light Intensity</label>
+      <input type="range" id="rng-lightintensity" min="0" max="5" step="0.1" value="1.5">
+      <div class="val" id="val-lightintensity">1.50</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Material</div>
+    <div class="ctrl-row">
+      <label>Color</label>
+      <input type="color" id="clr-material" value="#b0b0b0">
+    </div>
+    <div class="ctrl-row">
+      <label>Roughness</label>
+      <input type="range" id="rng-roughness" min="0" max="1" step="0.01" value="0.55">
+      <div class="val" id="val-roughness">0.55</div>
+    </div>
+    <div class="ctrl-row">
+      <label>Metalness</label>
+      <input type="range" id="rng-metalness" min="0" max="1" step="0.01" value="0.0">
+      <div class="val" id="val-metalness">0.00</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Background</div>
+    <div class="ctrl-row">
+      <label>Color</label>
+      <input type="color" id="clr-bg" value="#2a2a2a">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Model Info</div>
+    <div class="info-row">Vertices <span id="info-verts">-</span></div>
+    <div class="info-row">Faces <span id="info-faces">-</span></div>
+    <div class="info-row">Normals <span id="info-normals">-</span></div>
+    <div class="info-row">Bounding Box <span id="info-bbox">-</span></div>
+    <div class="info-row">Scale (units) <span id="info-scale">-</span></div>
+    <div class="info-row">Materials <span id="info-mats">None (geometry only)</span></div>
+    <div class="info-row">UVs <span id="info-uvs">None</span></div>
+    <div class="info-row">Source <span id="info-source">Blender 5.0.0</span></div>
+  </div>
+</div>
+
+<!-- Three.js from CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+
+// --- Renderer ---
+const container = document.getElementById('canvas-container');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+// --- Scene ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2a2a2a);
+
+// --- Camera ---
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.0001, 100);
+camera.position.set(0.1, 0.08, 0.15);
+
+// --- Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.01;
+controls.maxDistance = 10;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 2.0;
+
+// --- Lighting (studio setup matching Blender's default viewport) ---
+// Blender viewport uses a 3-point HDRI-like setup. We approximate with:
+// Key light, fill light, rim light, ambient
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+keyLight.position.set(0.5, 1, 0.8);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0xc4d4ff, 0.6);
+fillLight.position.set(-0.8, 0.5, -0.3);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xfff0e0, 0.8);
+rimLight.position.set(0.0, -0.2, -1.0);
+scene.add(rimLight);
+
+// Hemisphere light for ambient fill (sky/ground)
+const hemiLight = new THREE.HemisphereLight(0xb0c4de, 0x404040, 0.4);
+scene.add(hemiLight);
+
+// Subtle ambient
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+scene.add(ambientLight);
+
+// --- Material ---
+// Blender default viewport material: light grey, slightly rough, non-metallic
+const material = new THREE.MeshStandardMaterial({
+  color: 0xb0b0b0,
+  roughness: 0.55,
+  metalness: 0.0,
+  side: THREE.DoubleSide, // ensure all faces visible
+  flatShading: false,     // smooth shading to match s 1
+});
+
+// --- Load OBJ ---
+const loader = new OBJLoader();
+let modelGroup = null;
+let initialCameraPos = new THREE.Vector3();
+let initialTarget = new THREE.Vector3();
+
+loader.load(
+  '../Louver.obj',
+  (obj) => {
+    modelGroup = obj;
+
+    // Apply our material to all meshes
+    let totalVerts = 0;
+    let totalFaces = 0;
+    let hasNormals = false;
+
+    obj.traverse((child) => {
+      if (child.isMesh) {
+        child.material = material;
+        const geo = child.geometry;
+
+        // Ensure normals are computed if missing
+        if (!geo.attributes.normal) {
+          geo.computeVertexNormals();
+        } else {
+          hasNormals = true;
+        }
+
+        totalVerts += geo.attributes.position.count;
+        if (geo.index) {
+          totalFaces += geo.index.count / 3;
+        } else {
+          totalFaces += geo.attributes.position.count / 3;
+        }
+      }
+    });
+
+    // Compute bounding box for framing
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Frame the object: position camera to see the full object
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraDistance = (maxDim / 2) / Math.tan(fov / 2);
+    cameraDistance *= 1.8; // padding
+
+    // Blender default: Y-up. Three.js is also Y-up. OBJLoader preserves this.
+    camera.position.set(
+      center.x + cameraDistance * 0.5,
+      center.y + cameraDistance * 0.4,
+      center.z + cameraDistance * 0.7
+    );
+    camera.near = maxDim * 0.001;
+    camera.far = maxDim * 100;
+    camera.updateProjectionMatrix();
+
+    controls.target.copy(center);
+    controls.update();
+
+    // Save initial state for reset
+    initialCameraPos.copy(camera.position);
+    initialTarget.copy(center);
+
+    scene.add(obj);
+
+    // Update info panel
+    document.getElementById('info-verts').textContent = totalVerts.toLocaleString();
+    document.getElementById('info-faces').textContent = totalFaces.toLocaleString();
+    document.getElementById('info-normals').textContent = hasNormals ? 'Yes (from file)' : 'Computed';
+    document.getElementById('info-bbox').textContent =
+      `${size.x.toFixed(4)} x ${size.y.toFixed(4)} x ${size.z.toFixed(4)}`;
+    document.getElementById('info-scale').textContent =
+      `max ${maxDim.toFixed(4)}`;
+
+    // Hide loader
+    document.getElementById('loader').classList.add('hidden');
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      document.getElementById('loader').textContent = `Loading model... ${pct}%`;
+    }
+  },
+  (err) => {
+    document.getElementById('loader').textContent = `Error loading model: ${err.message}`;
+    console.error(err);
+  }
+);
+
+// --- Controls Wiring ---
+
+// Wireframe
+document.getElementById('chk-wireframe').addEventListener('change', (e) => {
+  material.wireframe = e.target.checked;
+});
+
+// Auto-rotate
+document.getElementById('chk-rotate').addEventListener('change', (e) => {
+  controls.autoRotate = e.target.checked;
+});
+
+// Flat shading
+document.getElementById('chk-flatshade').addEventListener('change', (e) => {
+  material.flatShading = e.target.checked;
+  material.needsUpdate = true;
+});
+
+// Exposure
+document.getElementById('rng-exposure').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  renderer.toneMappingExposure = v;
+  document.getElementById('val-exposure').textContent = v.toFixed(2);
+});
+
+// Env intensity (hemisphere light)
+document.getElementById('rng-envintensity').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  hemiLight.intensity = v;
+  document.getElementById('val-envintensity').textContent = v.toFixed(2);
+});
+
+// Light intensity (key light)
+document.getElementById('rng-lightintensity').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  keyLight.intensity = v;
+  document.getElementById('val-lightintensity').textContent = v.toFixed(2);
+});
+
+// Material color
+document.getElementById('clr-material').addEventListener('input', (e) => {
+  material.color.set(e.target.value);
+});
+
+// Roughness
+document.getElementById('rng-roughness').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  material.roughness = v;
+  document.getElementById('val-roughness').textContent = v.toFixed(2);
+});
+
+// Metalness
+document.getElementById('rng-metalness').addEventListener('input', (e) => {
+  const v = parseFloat(e.target.value);
+  material.metalness = v;
+  document.getElementById('val-metalness').textContent = v.toFixed(2);
+});
+
+// Background color
+document.getElementById('clr-bg').addEventListener('input', (e) => {
+  scene.background = new THREE.Color(e.target.value);
+});
+
+// Reset view
+document.getElementById('btn-reset').addEventListener('click', () => {
+  camera.position.copy(initialCameraPos);
+  controls.target.copy(initialTarget);
+  controls.update();
+});
+
+// Fullscreen
+document.getElementById('btn-fullscreen').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Render Loop ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
